@@ -1,4 +1,1 @@
-# Sinliede的个人博客
-
-
-记录工作学习中的点点滴滴
+Sinliede's personal blogs

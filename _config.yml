@@ -1,34 +1,28 @@
-# Site settings
-title: LiXizhi's Personal Website
-email: lixizhi@yeah.net
-description: Xizhi's Ideas & Blogs
-# > # this means to ignore newlines until "baseurl:"
-#   Write an awesome description for your new site here. You can edit this
-#   line in _config.yml. It will appear in your document head meta (for
-#   Google search results) and in your feed.xml site description.
+title: Sinliede
+description: My Personal Blog
+author: Sinliede
+logo: /hcz-jekyll-blog/static/img/avatar.png
+github: https://github.com/Sinliede
+about: java developer
 
-# baseurl: "" # the subpath of your site, e.g. /blog/
-# url: "http://yourdomain.com" # the base hostname & protocol for your site
-# twitter_username: jekyllrb
-github_username: Sinliede
-permalink: /:year/:month/:day/:title/
-# this is the url root of the view source link on the footer page.
-viewsourceroot: https://github.com/Sinliede/Sinliede.github.io/blob/master/
-# this is the url root of the create page link on the footer page.
-newsourceroot: https://github.com/Sinliede/Sinliede.github.io/new/master
-#########################################
-# for duoshuo.com commenting system, uncomment following line if you do not want to include duoshuo.com. 
-#duoshuo_shortname: lixizhi
-#duoshuo_url: "http://lixizhi.github.io"
-# disqus.com commenting system. please note that it is exclusive with duoshuo.com
-disqus_shortname: Sinliede
-disqus_url: "https://Sinliede.github.io"
-#########################################
+baseurl: "https://Sinliede.github.io"
+url: "https://Sinliede.github.io"
 
-# Build settings
+allowsearch: true
+
+disqus_shortname: aboutashu
+google_analytics: UA-72862926-1
+
+share:
+  twitter_username: \#
+  fb_appid: 000000000000
+
+
+enableTags: true
+tagarray: []
+
+paginate: 20
+per_page: 20
+paginate_path: "/page:num/"
 markdown: kramdown
-
-# highlight
-# highlighter: pygments
-# highlighter: rouge
-# highlighter: false
+gems: [jekyll-paginate, jekyll-gist]

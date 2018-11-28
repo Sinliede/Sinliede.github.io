@@ -1,17 +1,34 @@
 # Site settings
-name: sinliede
-github: https://github.com/Sinliede/
+title: LiXizhi's Personal Website
+email: lixizhi@yeah.net
+description: Xizhi's Ideas & Blogs
+# > # this means to ignore newlines until "baseurl:"
+#   Write an awesome description for your new site here. You can edit this
+#   line in _config.yml. It will appear in your document head meta (for
+#   Google search results) and in your feed.xml site description.
 
-#permalink: /:categories/:year/:month/:day/:title/
+# baseurl: "" # the subpath of your site, e.g. /blog/
+# url: "http://yourdomain.com" # the base hostname & protocol for your site
+# twitter_username: jekyllrb
+github_username: Sinliede
 permalink: /:year/:month/:day/:title/
-paginate: 10
-
-exclude: ['README.md', 'Gemfile.lock', 'Gemfile', 'Rakefile']
-
-github_username: luoyan35714
+# this is the url root of the view source link on the footer page.
+viewsourceroot: https://github.com/Sinliede/Sinliede.github.io/blob/master/
+# this is the url root of the create page link on the footer page.
+newsourceroot: https://github.com/Sinliede/Sinliede.github.io/new/master
+#########################################
+# for duoshuo.com commenting system, uncomment following line if you do not want to include duoshuo.com. 
+#duoshuo_shortname: lixizhi
+#duoshuo_url: "http://lixizhi.github.io"
+# disqus.com commenting system. please note that it is exclusive with duoshuo.com
+disqus_shortname: Sinliede
+disqus_url: "https://Sinliede.github.io"
+#########################################
 
 # Build settings
 markdown: kramdown
 
-baidu_analysis: 94be4b0f9fc5d94cc0d0415ea6761ae9
-
+# highlight
+# highlighter: pygments
+# highlighter: rouge
+# highlighter: false

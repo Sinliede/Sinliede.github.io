@@ -1,12 +1,12 @@
 title: Sinliede
 description: My Personal Blog
 author: Sinliede
-logo: /hcz-jekyll-blog/static/img/avatar.png
+logo: /static/img/sinliede.png
 github: https://github.com/Sinliede
 about: java developer
 
-baseurl: "https://Sinliede.github.io"
-url: "https://Sinliede.github.io"
+baseurl: "https://github.com/Sinliede"
+url: "https://github.com/Sinliede/Sinliede.github.io"
 
 allowsearch: true
 

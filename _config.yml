@@ -1,28 +1,26 @@
-title: Sinliede
-description: My Personal Blog
+# Site settings
+name: Sinliede
+email: 932502163@qq.com
 author: Sinliede
-logo: /static/img/sinliede.jpeg
-github: https://github.com/Sinliede
-about: java developer
+url: https://Sinliede.github.io/
+resume_site: https://Sinliede.github.io/
+github: https://github.com/Sinliede/
+baseurl: "/LessOrMore"
+description: Some discoveries and ideas on coding
+meta_description: Sinliede's personal blog, keep on going
+motto: It's our wits that make us men.
+banner: keep on going
 
-baseurl: "https://Sinliede.github.io"
-url: "https://Sinliede.github.io"
+#permalink: /:categories/:year/:month/:day/:title/
+permalink: /:year/:month/:day/:title/
+paginate: 10
 
-allowsearch: true
+exclude: ['README.md', 'Gemfile.lock', 'Gemfile', 'Rakefile']
 
-disqus_shortname: aboutashu
-google_analytics: UA-72862926-1
+github_username: Sinliede
 
-share:
-  twitter_username: \#
-  fb_appid: 000000000000
+# Build settings
+markdown: atom & typora
 
+baidu_analysis: 94be4b0f9fc5d94cc0d0415ea6761ae9
 
-enableTags: true
-tagarray: []
-
-paginate: 20
-per_page: 20
-paginate_path: "/page:num/"
-markdown: kramdown
-gems: [jekyll-paginate, jekyll-gist]

@@ -8,24 +8,16 @@ permalink: /reference/
 {:toc}
 
 
-走向架构师之路
+javadoop
 =====================
-[走向架构师之路](http://blog.csdn.net/cutesource/article/details/4901506)
+[https://javadoop.com/](https://javadoop.com/)
 
-HTTP协议详解
+[橙子wj]
 =====================
-[HTTP协议详解](http://www.jmarshall.com/easy/http/)
+为什么新生代内存需要有两个Survivor区
+[https://blog.csdn.net/antony9118/article/details/51425581](https://blog.csdn.net/antony9118/article/details/51425581)
 
-Axis 2.0的入门
+[Hosee]
 =====================
-[曹胜欢][http://blog.csdn.net/csh624366188/article/details/8362696](http://blog.csdn.net/csh624366188/article/details/8362696)
-
-[一线码农]
-=====================
-算法入门和分布式缓存入门
-[http://www.cnblogs.com/huangxincheng/archive/2011/11/14/2249046.html](http://www.cnblogs.com/huangxincheng/archive/2011/11/14/2249046.html)
-
-[雷霄骅]
-=====================
-视音频编解码技术学习方法
-[http://blog.csdn.net/leixiaohua1020/article/details/18893769](http://blog.csdn.net/leixiaohua1020/article/details/18893769)
+谈谈HashMap线程不安全的体现
+[https://my.oschina.net/hosee/blog/673521](https://my.oschina.net/hosee/blog/673521)

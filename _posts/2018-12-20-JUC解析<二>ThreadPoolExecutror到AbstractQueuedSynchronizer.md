@@ -34,6 +34,7 @@ private final AtomicInteger ctl = new AtomicInteger(ctlOf(RUNNING, 0)); //-2^29
 private static final int COUNT_BITS = Integer.SIZE - 3; 			//29
 private static final int CAPACITY   = (1 << COUNT_BITS) - 1; 	//2^29 -1
 
+//RUNNING状态，代表线程池正常工作，注意从-2^29到-1，线程池都是处于RUNNING状态
 private static final int RUNNING    = -1 << COUNT_BITS; 			//-2^29
 private static final int SHUTDOWN   =  0 << COUNT_BITS;				//0，
 private static final int STOP       =  1 << COUNT_BITS;				//2^29
@@ -41,7 +42,7 @@ private static final int TIDYING    =  2 << COUNT_BITS;				//2*2^29
 private static final int TERMINATED =  3 << COUNT_BITS;				//3*2^29
 
 // Packing and unpacking ctl
-//c<0时返回-2^29, c>=0时返回c
+//c<0时返回-2^29, c>=0时返回c,此方法可以用于判断线程池是否处于RUNNING状态
 private static int runStateOf(int c)     { return c & ~CAPACITY; }
 //按位与操作，注意CAPACITY后28位都是1，第29位是0，符号位是0，此操作后的结果是保留入参c的前28位并取正
 //注意如果入参c是负数的话按照返回的是c的补码的前28位并取正。c从-2^29到-1的结果分别是0到2^29-1
@@ -129,10 +130,16 @@ private boolean addWorker(Runnable firstTask, boolean core) {
             int rs = runStateOf(c);
 
             // Check if queue empty only if necessary.
-            //判断当前等待队列是否为空
+            //线程池不是RUNNING状态
             if (rs >= SHUTDOWN &&
+                //线程池处于SHUTDOWN状态
                 ! (rs == SHUTDOWN &&
+                   //当前线程是否是主线程,如果firstTask==null,那么当前方法
+                   //是由processWorkerExit方法调用的,说明当前线程是任务处理线程(子线程);
+                   //如果firstTask!=null,那么当前方法是由execute()方法调用的,
+                   //说明当前线程是主线程
                    firstTask == null &&
+                   //任务队列不为空
                    ! workQueue.isEmpty()))
                 return false;
             //循环
@@ -169,11 +176,10 @@ private boolean addWorker(Runnable firstTask, boolean core) {
                     // Recheck while holding lock.
                     // Back out on ThreadFactory failure or if
                     // shut down before lock acquired.
-                    // 再次检测线程池是否已经满了或者被关闭
-
                     int rs = runStateOf(ctl.get());
-
+                    //线程池处于RUNNING状态
                     if (rs < SHUTDOWN ||
+                        //线程池处于SHUTDOWN状态且当前不处于主线程
                         (rs == SHUTDOWN && firstTask == null)) {
                         if (t.isAlive()) // precheck that t is startable
                             throw new IllegalThreadStateException();
@@ -278,6 +284,9 @@ final void runWorker(Worker w) {
     boolean completedAbruptly = true;
     try {
         //Worker初始化任务是否为空，为空则从workQueue中取任务，循环执行任务
+        //当workQueue为空时，getTask方法在allowCoreThreadTimeOut为false的时候
+        //会一直等待直到workQueue不为空，在allowCoreThreadTimeOut为true的时候
+        //等待的超时时间为keepAliveTime
         while (task != null || (task = getTask()) != null) {
             //标记当前线程为工作状态
             w.lock();
@@ -321,7 +330,58 @@ final void runWorker(Worker w) {
     }
 }
 ```
-Worker类实现了Runnable接口，并且在构造方法中将其Thread属性thread的Runnable属性设置为本身，这样当我们调用worker.thread.start()的时候会执行woker.run()方法。看下processWorkerExit方法
+1.Worker类实现了Runnable接口，并且在构造方法中将其Thread属性thread的Runnable属性设置为本身，这样当我们调用worker.thread.start()的时候会执行woker.run()方法,worker.run()方法会执行ThreadPoolExecutor.runWorker方法。
+2.当worker.firstTask为null的时候，会通过getTask方法从workQueue中取任务来执行，当所有workQueue中的所有任务执行完毕后，如果我们设置allowCoreThreadTimeOut=true和keepAliveTime,那么getTask方法会在等待keepAliveTime后返回null,并执行ctl--，这样我们退出循环并执行processWorkerExit方法。
+看一下getTask方法
+```java
+private Runnable getTask() {
+    boolean timedOut = false; // Did the last poll() time out?
+
+    for (;;) {
+        int c = ctl.get();
+        int rs = runStateOf(c);
+
+        //线程池处于STOP状态或者线程池处于SHUTDOWN状态且workQueue为空
+        if (rs >= SHUTDOWN && (rs >= STOP || workQueue.isEmpty())) {
+            decrementWorkerCount();
+            return null;
+        }
+
+        int wc = workerCountOf(c);
+
+        // Are workers subject to culling?
+        //是否设置取任务时限
+        boolean timed = allowCoreThreadTimeOut || wc > corePoolSize;
+        //线程池超过maximumPoolSize(已满)或者取任务超时
+        if ((wc > maximumPoolSize || (timed && timedOut))
+            //线程池不为空或者workQueue为空
+            && (wc > 1 || workQueue.isEmpty())) {
+            //工作线程数量ctl减1
+            if (compareAndDecrementWorkerCount(c))
+                return null;
+            continue;
+        }
+
+        try {
+            Runnable r = timed ?
+                //取任务时限为keepAliveTime
+                workQueue.poll(keepAliveTime, TimeUnit.NANOSECONDS) :
+                //不设置取任务时限，取不到就一直等待，直到取到为止
+                workQueue.take();
+            //超时前取到了任务
+            if (r != null)
+                return r;
+            //超时，进入下次循环并处理超时
+            timedOut = true;
+        } catch (InterruptedException retry) {
+            timedOut = false;
+        }
+    }
+}
+```
+1.如果取任务超时，那么ctl减1，意味着当前线程被线程池放弃。
+2.从这个方法我们知道，当任务数量不足时，线程池总是趋向于保持corePoolSize个线程。
+3.workQueue是一个BlockingQueue,在执行take()方法的时候，如果queue为空，当前线程会挂起在此处，直到queue不为空且取到元素为止，关于BlockingQueue后续文章会进行分析。
 ```java
 private void processWorkerExit(Worker w, boolean completedAbruptly) {
     //当前线程是否被中断

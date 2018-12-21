@@ -1,11 +1,12 @@
 ## 1.前言
 上篇文章我们从ThreadPoolExecutor中的一小部分切入，分析了ReentrantLock和AbstractQueuedSynchronizer在进行加锁和解锁操作时的原理，这篇文章将尝试解读下ThreadPoolExecutor是如何进行线程和任务调度的。
+ps:本篇博客是上一篇的延续，其中涉及AQS原理相关的内容，如果对AQS的原理不了解,可以先翻阅上一篇。个人水平有限，如有谬误的地方，还请留言指正。
 
 ## 2.问题引入
 假设现在有10000个耗时任务，我们希望在较短的时间内将这批耗时任务完成，此时我们肯定会想到多线程并发。通常，为了复用线程对象，控制同一时间内线程的并发数，我们我使用线程池ThreadPoolExecutor进行多线程的调度。
 ```java
 BlockingQueue<Runnable> blockingQueue = new LinkedBlockingQueue<>();
-ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(20, 20, 60L, TimeUnit.SECONDS, blockingQueue);
+ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(20, 40, 60L, TimeUnit.SECONDS, blockingQueue);
 for (int i = 0; i < 10000; i++) {
     threadPoolExecutor.submit(() -> {
         try {
@@ -16,7 +17,7 @@ for (int i = 0; i < 10000; i++) {
     });
 }
 ```
-上面演示了ThreadPoolExecutor的简单用法，我们设置corePoolSize和maxPoolSize都为20,最大允许20个线程同时运行。我们在主线程MainThread中将所有耗时操作通过submit方法提交到ThreadPoolExecutor并由其编排运行。
+上面演示了ThreadPoolExecutor的简单用法，我们设置corePoolSize为20，maxPoolSize为40,最大允许40个线程同时运行。我们在主线程MainThread中将所有耗时操作通过submit方法提交到ThreadPoolExecutor并由其编排运行。
 ## 3.ThreadPoolExecutor源码分析
 ThreadPoolExecutor继承了AbstractExecutorService了submit方法，submit方法调用了由ThreadPoolExecutor本身实现的execute方法
 ```java
@@ -31,23 +32,25 @@ public Future<?> submit(Runnable task) {
 ```java
 //线程池中活跃的线程数量（未死亡），这里用了int的原子类AtomicInteger
 private final AtomicInteger ctl = new AtomicInteger(ctlOf(RUNNING, 0)); //-2^29
-private static final int COUNT_BITS = Integer.SIZE - 3; 			//29
-private static final int CAPACITY   = (1 << COUNT_BITS) - 1; 	//2^29 -1
+private static final int COUNT_BITS = Integer.SIZE - 3;                 //29
+private static final int CAPACITY   = (1 << COUNT_BITS) - 1;            //2^29 -1
 
 //RUNNING状态，代表线程池正常工作，注意从-2^29到-1，线程池都是处于RUNNING状态
-private static final int RUNNING    = -1 << COUNT_BITS; 			//-2^29
-private static final int SHUTDOWN   =  0 << COUNT_BITS;				//0，
-private static final int STOP       =  1 << COUNT_BITS;				//2^29
-private static final int TIDYING    =  2 << COUNT_BITS;				//2*2^29
-private static final int TERMINATED =  3 << COUNT_BITS;				//3*2^29
+private static final int RUNNING    = -1 << COUNT_BITS;                 //-2^29
+private static final int SHUTDOWN   =  0 << COUNT_BITS;                 //0，
+private static final int STOP       =  1 << COUNT_BITS;                 //2^29
+private static final int TIDYING    =  2 << COUNT_BITS;                 //2*2^29
+private static final int TERMINATED =  3 << COUNT_BITS;                 //3*2^29
 
 // Packing and unpacking ctl
 //c<0时返回-2^29, c>=0时返回c,此方法可以用于判断线程池是否处于RUNNING状态
 private static int runStateOf(int c)     { return c & ~CAPACITY; }
 //按位与操作，注意CAPACITY后28位都是1，第29位是0，符号位是0，此操作后的结果是保留入参c的前28位并取正
 //注意如果入参c是负数的话按照返回的是c的补码的前28位并取正。c从-2^29到-1的结果分别是0到2^29-1
+//线程池当前线程数亮
 private static int workerCountOf(int c)  { return c & CAPACITY; }
 private static int ctlOf(int rs, int wc) { return rs | wc; }
+//线程池是否处于工作RUNNING状态
 private static boolean isRunning(int c) { return c < SHUTDOWN; }
 //线程池的任务队列
 private final BlockingQueue<Runnable> workQueue;
@@ -58,7 +61,7 @@ private final HashSet<Worker> workers = new HashSet<Worker>();
 //当allowCoreThreadTimeOut为true时的超时时间
 private volatile long keepAliveTime;
 //对于核心线程(数目小于等于corePoolSize的线程)，是否设置取任务的等待超时时间
-//默认值为0（boolean值为false),不设置超时时间
+//默认值为0（boolean值为false),不设置核心线程超时时间
 //如果为true，那么超时时间为keepAliveTime
 private volatile boolean allowCoreThreadTimeOut;
 //线程池维护的最小线程数量
@@ -99,11 +102,11 @@ public void execute(Runnable command) {
                 return;
             c = ctl.get();
         }
-        //池中工作线程数量大于或等于corePoolSize且小于CAPACITY，将任务存入workQueue
+         //池中工作线程数量大于或等于corePoolSize且小于CAPACITY(线程池处于RUNNING状态)，将任务存入workQueue
         if (isRunning(c) && workQueue.offer(command)) {
             //重复检查当前池中线程数量
             int recheck = ctl.get();
-            //当前池中线程数>CAPACITY，移除已经入队的任务并抛出任务被拒绝异常
+            //线程池不处于RUNNING状态，移除已经入队的任务并抛出任务被拒绝异常
             if (! isRunning(recheck) && remove(command))
                 reject(command);
             //当前池中没有工作线程,可能是因为只有一个线程工作且这个线程死掉了或者线程池被关闭
@@ -294,10 +297,15 @@ final void runWorker(Worker w) {
             // if not, ensure thread is not interrupted.  This
             // requires a recheck in second case to deal with
             // shutdownNow race while clearing interrupt
+            // 线程池状态是STOP,TIDYING或者TERMINATED
             if ((runStateAtLeast(ctl.get(), STOP) ||
+                 //当前线程已经标记为中断状态
                  (Thread.interrupted() &&
+                    //再次检测线程池是否STOP
                     runStateAtLeast(ctl.get(), STOP))) &&
+                        //当前线程未中断
                         !wt.isInterrupted())
+                //中断当前线程
                 wt.interrupt();
             try {
                 //默认什么都不做，ThreadPoolExecutor的继承类可以实现此方法
@@ -352,9 +360,9 @@ private Runnable getTask() {
         // Are workers subject to culling?
         //是否设置取任务时限
         boolean timed = allowCoreThreadTimeOut || wc > corePoolSize;
-        //线程池超过maximumPoolSize(已满)或者取任务超时
+        //线程池线程数量超过maximumPoolSize(已满)或者取任务超时
         if ((wc > maximumPoolSize || (timed && timedOut))
-            //线程池不为空或者workQueue为空
+            //线程池线程数不为1或者workQueue为空
             && (wc > 1 || workQueue.isEmpty())) {
             //工作线程数量ctl减1
             if (compareAndDecrementWorkerCount(c))
@@ -379,9 +387,11 @@ private Runnable getTask() {
     }
 }
 ```
-1.如果取任务超时，那么ctl减1，意味着当前线程被线程池放弃。
-2.从这个方法我们知道，当任务数量不足时，线程池总是趋向于保持corePoolSize个线程。
-3.workQueue是一个BlockingQueue,在执行take()方法的时候，如果queue为空，当前线程会挂起在此处，直到queue不为空且取到元素为止，关于BlockingQueue后续文章会进行分析。
+1.当allowCoreThreadTimeOut为true时,总是设置超时时间，当池中线程数量大于corePoolSize时，也会设置超时时间
+2.如果取任务超时，那么ctl减1，意味着当前线程被线程池放弃。
+3.从这个方法我们知道，当任务数量不足时，线程池总是趋向于保持corePoolSize个线程。
+4.workQueue是一个BlockingQueue,在执行take()方法的时候，如果queue为空，当前线程会挂起在此处，直到queue不为空且取到元素为止，关于BlockingQueue后续文章会进行分析。
+5.workQueue在执行poll方法时有超时时限设置，如果超时则返回null,此时queue一定为空。
 ```java
 private void processWorkerExit(Worker w, boolean completedAbruptly) {
     //当前线程是否被中断
@@ -405,19 +415,24 @@ private void processWorkerExit(Worker w, boolean completedAbruptly) {
     tryTerminate();
 
     int c = ctl.get();
-    //工作线程的数量ctl<=CAPACITY,线程池当前不处于STOP状态
+    //线程池当前不处于STOP状态（RUNNING或者SHUTDOWN状态）
     if (runStateLessThan(c, STOP)) {
         //线程未被中断
         if (!completedAbruptly) {
-
+            //线程池是否设置了线程挂起（空闲）超时时限
             int min = allowCoreThreadTimeOut ? 0 : corePoolSize;
+            //设置了时限，默认保留一个空闲线程，否则默认保留corePoolSize个线程
             if (min == 0 && ! workQueue.isEmpty())
                 min = 1;
+            //如果当前池中线程数量大于需要保留的线程数量
             if (workerCountOf(c) >= min)
+                //结束当前线程
                 return; // replacement not needed
         }
-        //递归调用addWorker方法，在当前线程中从workQueue中取出任务执行
+        //当前线程存活，调用addWorker方法从workQueue中取任务执行
         addWorker(null, false);
     }
 }
 ```
+1.如果completedAbruptly值为true,说明runWorker方法中的while循环没有被正确的执行，getTask方法没有将ctl减1，这里需要将工作线程数量ctl减1。
+2.在allowCoreThreadTimeOut为true时，如果workQueue为空，那么一个核心线程不保留，如果workQueue不为空，那么保留一个核心线程。

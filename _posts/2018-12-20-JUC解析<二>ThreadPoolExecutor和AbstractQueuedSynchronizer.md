@@ -37,13 +37,17 @@ private static final int CAPACITY   = (1 << COUNT_BITS) - 1;            //2^29 -
 
 //RUNNING状态，代表线程池正常工作，注意从-2^29到-1，线程池都是处于RUNNING状态
 private static final int RUNNING    = -1 << COUNT_BITS;                 //-2^29
+//SHUTDOWN状态
 private static final int SHUTDOWN   =  0 << COUNT_BITS;                 //0，
+//STOP状态
 private static final int STOP       =  1 << COUNT_BITS;                 //2^29
+//TIDYING状态
 private static final int TIDYING    =  2 << COUNT_BITS;                 //2*2^29
+//TERMINATED状态
 private static final int TERMINATED =  3 << COUNT_BITS;                 //3*2^29
 
 // Packing and unpacking ctl
-//c<0时返回-2^29, c>=0时返回c,此方法可以用于判断线程池是否处于RUNNING状态
+//c<0时返回-2^29, c>=0时返回c,此方法可以用于判断线程池处于何种状态
 private static int runStateOf(int c)     { return c & ~CAPACITY; }
 //按位与操作，注意CAPACITY后28位都是1，第29位是0，符号位是0，此操作后的结果是保留入参c的前28位并取正
 //注意如果入参c是负数的话按照返回的是c的补码的前28位并取正。c从-2^29到-1的结果分别是0到2^29-1
@@ -436,3 +440,16 @@ private void processWorkerExit(Worker w, boolean completedAbruptly) {
 ```
 1.如果completedAbruptly值为true,说明runWorker方法中的while循环没有被正确的执行，getTask方法没有将ctl减1，这里需要将工作线程数量ctl减1。
 2.在allowCoreThreadTimeOut为true时，如果workQueue为空，那么一个核心线程不保留，如果workQueue不为空，那么保留一个核心线程。
+
+## 4.总结
+这篇文章从源码的角度分析了线程池的工作原理，我们引用这篇博文（[一文带你进入Java之ThreadPool](http://hulong.me/2017/01/19/Java-ThreadPool.html)）对于线程池的通俗描述已方便大家对于线程池的理解:
+
+把线程池理解成一个医院，在医院成立之初，医生数量为 0，当有患者时，没有医生来诊疗患者，医院会去招聘新的医生，一旦这些医生忙不过来时，继续招聘，直到达到corePoolSize数量，停止招聘。此时的corePoolSize个医生为正式员工，即使没有患者，也不会辞退他们（销毁线程）。
+
+医生达到corePoolSize后，当有新患者来就诊，医生忙不过来时，直接让他们在候诊区（workQueue）取号等候，当医生看完上一个病人时，会去候诊区叫下一个号进去，如果没有患者，则可以休息。
+
+当患者数量急剧上升，候诊区座位数不够了，这时，医院会再去招聘临时工医生，这些临时工医生会让没有座位的患者立即就诊，医院按需求逐个招聘，直到达到maximumPoolSize数量，停止招聘。
+
+当临时招聘的医生长时间（keepAliveTime）处于空闲状态时，医院就会解雇他们，毕竟要额外付工资啊～
+
+如果你实在觉得医院效益不好，那就可以通过allowsCoreThreadTimeOut方法设置允许解雇空闲的正式员工，只留一个就好了～

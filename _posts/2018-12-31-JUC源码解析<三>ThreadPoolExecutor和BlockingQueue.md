@@ -209,7 +209,7 @@ public E take() throws InterruptedException {
 
 1.结合入队方法offer，假设当前队列为空，take方法中先获取了takeLock锁，而后notEmpty.await挂起了当前线程，而在offer方法中对notEmpty执行了唤起方法signalNotEmpty，注意到signalNotEmpty方法中会先执行takeLock.lock()获取takeLock锁，这个时候takeLock锁已被持有，offer方法会在takeLock.lock()方法中挂起，这不是一个典型的死锁吗？
 
-2.为什么count要用AtomicInteger类型,take方法中对count进行减1操作的时候为什么必须使用CAS操作getAndDecrement。同理可以思考下add方法中的CAS操作，getAndIncrement
+2.为什么count要用AtomicInteger类型,take方法中对count进行减1操作的时候为什么必须使用CAS操作getAndDecrement。同理可以思考下add和offer方法中的CAS操作，getAndIncrement
 
 3.为什么在count.getAndDecrement操作后判断队列是否为空并进行notEmpty.signal操作。
 
@@ -252,7 +252,9 @@ public class ConditionObject implements Condition, java.io.Serializable {
       //完全释放被占用的锁
       int savedState = fullyRelease(node);
       int interruptMode = 0;
+      //当前节点是否进入syncQueue队列
       while (!isOnSyncQueue(node)) {
+          //不在syncQueue队列，挂起当前线程
           LockSupport.park(this);
           if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
               break;
@@ -323,7 +325,7 @@ private void unlinkCancelledWaiters() {
     }
 }
 ```
-unlinkCancelledWaiters方法实现了一个空间复杂度O(1)，时间复杂度O(n)的算法，将当前Condition队列中状态不是Node.CONDITION的节点取消排队。接下来执行的是fullyRelease方法，彻底释放锁。
+unlinkCancelledWaiters方法实现了一个空间复杂度O(1)，时间复杂度O(n)的算法，将当前Condition队列中状态不是Node.CONDITION的节点取消排队。注意到addConditionWaiter并不是一个线程安全的方法，但是在await方法执行前，我们执行了takeLock.lock获取锁，这样保证了每次只有一个线程对conditionQueue进行操作。接下来执行的是fullyRelease方法，彻底释放锁。
 ```java
 final int fullyRelease(Node node) {
     boolean failed = true;
@@ -345,5 +347,138 @@ final int fullyRelease(Node node) {
             node.waitStatus = Node.CANCELLED;
     }
 }
+
+public final boolean release(int arg) {
+    //state释放arg次，每次释放减1，如果释放后state值为0，返回true，否则返回false。
+    if (tryRelease(arg)) {
+        Node h = head;
+        //head节点不为空且队列不是初始化状态
+        if (h != null && h.waitStatus != 0)
+            //尝试唤起head节点的next节点
+            unparkSuccessor(h);
+        return true;
+    }
+    return false;
+    ```
+}
+release方法会将state设置为0，代表当前锁未被占用，并尝试唤起syncQueue的head节点的next节点进行抢锁操作。这里之所以要唤醒head节点的next节点，是因为当前节点释放锁，说明当前处于两种可能的情况：
+1.当前节点处于head节点，因此需要唤起head节点的next节点
+2.当前节点不在syncQueue队列中，因此head节点是一个空节点（初始化节点），因此需要唤醒head几点的next节点进行抢锁。
+如果对其中的原理不了解，可以阅读我第一篇关于ReentrantLock和AQS的文章。
+结合LinkedBlockingQueue的take方法和ConditionObject的await方法，我们可以知道，当LinkedBlockingQueue中节点数目为0时，所有消费线程会先进入syncQueue中排队获取锁，而后被唤起，进入conditionQueue中挂起等待被唤醒。
+
+await方法暂时先看到这里，接下来看下如何唤起在conditionQueue中挂起的线程。
+```java
+private void signalNotEmpty() {
+    final ReentrantLock takeLock = this.takeLock;
+    takeLock.lock();
+    try {
+        notEmpty.signal();
+    } finally {
+        takeLock.unlock();
+    }
+}
 ```
-release方法会将state设置为0，代表当前锁未被占用，并唤起syncQueue的head节点进行抢锁操作。
+这段代码展示了如何唤起conditionQueue中的节点：获得takeLock锁，执行notEmpty.signal()方法，而后释放锁。
+这里回答下我们之前提出的第一个问题：生产者线程在takeLock.lock()方法会首先尝试获取锁，如果获取失败，比如因为LinkedBlockingQueue.take()方法正在持有锁，那么会进入syncQueue队列中挂起，等待被唤起后获取锁。
+在消费者线程执行LinkedBlockingQueue.take()方法过程中，如果没有执行notEmpty.await()方法，那么最终会执行takeLock.unlock()方法释放锁并唤起后续线程；如果执行了notEmpty.await()方法，那么在该方法中会将锁完全释放并唤起后续线程后再挂起当前线程，因此不会产生因当前线程挂起而导致锁无法被释放的问题，那么最终生产者线程的takeLock.lock()会获取到锁。
+```java
+public final void signal() {
+    if (!isHeldExclusively())
+        //持有锁的线程不是当前线程，抛出异常
+        throw new IllegalMonitorStateException();
+    Node first = firstWaiter;
+    if (first != null)
+        //唤起节点
+        doSignal(first);
+}
+
+//持有锁的线程是否是当前线程
+protected final boolean isHeldExclusively() {
+    // While we must in general read state before owner,
+    // we don't need to do so to check if current thread is owner
+    return getExclusiveOwnerThread() == Thread.currentThread();
+}
+
+private void doSignal(Node first) {
+    do {
+        if ( (firstWaiter = first.nextWaiter) == null)
+            lastWaiter = null;
+        first.nextWaiter = null;
+    //将当前节点从conditionQueue转移到syncQueue队列
+    } while (!transferForSignal(first) &&
+             (first = firstWaiter) != null);
+}
+```
+doSignal方法中会尝试将firstWaiter节点转移到syncQueue队列
+```java
+/**
+ * Transfers a node from a condition queue onto sync queue.
+ * Returns true if successful.
+ * @param node the node
+ * @return true if successfully transferred (else the node was
+ * cancelled before signal)
+ */
+final boolean transferForSignal(Node node) {
+    /*
+     * If cannot change waitStatus, the node has been cancelled.
+     */
+    if (!compareAndSetWaitStatus(node, Node.CONDITION, 0))
+        return false;
+
+    /*
+     * Splice onto queue and try to set waitStatus of predecessor to
+     * indicate that thread is (probably) waiting. If cancelled or
+     * attempt to set waitStatus fails, wake up to resync (in which
+     * case the waitStatus can be transiently and harmlessly wrong).
+     */
+    Node p = enq(node);
+    int ws = p.waitStatus;
+    if (ws > 0 || !compareAndSetWaitStatus(p, ws, Node.SIGNAL))
+        LockSupport.unpark(node.thread);
+    return true;
+}
+```
+transferForSignal方法中，首先将节点的状态设置为0，也就是初始化状态，而后enq入队，入队后node节点成为syncQueue的尾节点tail节点；而后将tail节点的prev节点的waitStatus设置为SIGNAL状态，也就是等待获取锁状态。如果prev节点已经取消（waitStatus>0）或者设置waitStatus为SIGNAL失败，那么唤起当前线程。注意只要node节点执行了enq方法，那么就返回true，也就是成功进入syncQueue队列。
+
+这里我们分开讨论下：
+1. node节点线程被唤起，那么会进入进入await方法中的LockSupport.park(this)处，执行后续代码。
+2. node节点线程未被唤起，退出doSignal方法的循环，singal方法执行完毕，生产者线程在LinkedBlockingQueue.signalNotEmpty()方法中最终会执行takeLock.unlock()方法，释放锁并唤起后续线程，因此node节点最终会被唤起。
+
+ok，我们再次进入ConditionObject.await()方法中，看看消费者线程最终被唤起后又做了些什么。
+```java
+public final void await() throws InterruptedException {
+    if (Thread.interrupted())
+        throw new InterruptedException();
+    Node node = addConditionWaiter();
+    int savedState = fullyRelease(node);
+    int interruptMode = 0;
+    while (!isOnSyncQueue(node)) {
+        LockSupport.park(this);
+        if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
+            break;
+    }
+    if (acquireQueued(node, savedState) && interruptMode != THROW_IE)
+        interruptMode = REINTERRUPT;
+    if (node.nextWaiter != null) // clean up if cancelled
+        unlinkCancelledWaiters();
+    if (interruptMode != 0)
+        reportInterruptAfterWait(interruptMode);
+}
+
+/**
+ * Checks for interrupt, returning THROW_IE if interrupted
+ * before signalled, REINTERRUPT if after signalled, or
+ * 0 if not interrupted.
+ */
+private int checkInterruptWhileWaiting(Node node) {
+    return Thread.interrupted() ?
+        (transferAfterCancelledWait(node) ? THROW_IE : REINTERRUPT) :
+        0;
+}
+
+/** Mode meaning to reinterrupt on exit from wait */
+private static final int REINTERRUPT =  1;
+/** Mode meaning to throw InterruptedException on exit from wait */
+private static final int THROW_IE    = -1;
+```

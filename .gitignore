@@ -1,0 +1,47 @@
+/target/
+!.mvn/wrapper/maven-wrapper.jar
+
+### LOCAL ###
+/ConfigRoot
+raptor.xml
+
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+*.class
+
+log
+logs
+target
+spark-warehouse
+dist
+derby.log
+metastore_db
+webapp
+*.DS_Store
+*.versionsBackup
+
+# Package Files #
+*.jar
+*.war
+*.ear
+
+# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+hs_err_pid*
+temp_persist_config_*.xml
+XslTransformObjectCacheConfig64.xml
+TomcatThreadPoolSizeBean
+SensitiveParameters.xml

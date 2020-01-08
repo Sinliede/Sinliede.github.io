@@ -16,6 +16,7 @@ permalink: /:title
 paginate: 10
 
 exclude: ['README.md', 'Gemfile.lock', 'Gemfile', 'Rakefile']
+include: ['BingSiteAuth.xml']
 
 github_username: Sinliede
 
